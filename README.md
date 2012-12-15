@@ -12,16 +12,19 @@ Usage
 
 * Add the filter details to setup.py
 
- <code>'securestore=swift.common.middleware.securestore:filter_factory',</code>
+`'securestore=swift.common.middleware.securestore:filter_factory',`
 * Edit /etc/swift/proxy-server.conf
 
- <code>[pipeline:main]
- pipeline = healthcheck cache securestore swauth proxy-server
+`[pipeline:main]`
 
- [filter:securestore]
- use = egg:swift#securestore
- cache_servers = 127.0.0.1:8088</code>
+`pipeline = healthcheck cache securestore swauth proxy-server`
+
+`[filter:securestore]`
+
+`use = egg:swift#securestore`
+
+`cache_servers = 127.0.0.1:8088`
 
 * Install and reload the proxy server
 
- <code>python setup.py build; python setup.py install; </code>restart proxy server
+`python setup.py build; python setup.py install;` restart proxy server
