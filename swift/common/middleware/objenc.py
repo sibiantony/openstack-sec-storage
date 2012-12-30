@@ -96,7 +96,7 @@ class ObjEncMiddleware(object):
             return body
 
         else:
-            print "objenc: Return"
+            # print "objenc: Return"
             return self.app(env, start_response)
 
     def get_enc_key(self, environ):

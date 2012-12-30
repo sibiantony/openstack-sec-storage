@@ -1,22 +1,29 @@
+# A basic encryption middleware for swift. 
+# See the documentation for usage with swift. 
+#
+# Author : Sibi Antony, (c) 2012
+#            sibi [dot] antony [at] gmail [dot] com 
+
+import errno
+import os
+
 from swift.common.swob import Request, Response
-from swift.common.utils import split_path
+from swift.common.utils import split_path, hash_path
+
 from cStringIO import StringIO
 from hashlib import md5, sha1
 from Crypto.Cipher import AES
 
 class SecureStorage(object):
-
-    """Swift3 secure storage midleware
-	Uses a simple basic encryption """
+    """
+    Swift3 secure storage midleware - Uses a simple basic encryption 
+    """
     def __init__(self, app, conf, *args, **kwargs):
-
         self.app = app
         # get conf file parameter
         self.caches = conf.get('cache_servers', '127.0.0.1:8088').split(',')
 
-
     def __call__(self, env, start_response):
-
         """Request to the server.py"""
         req = Request(env)
 
@@ -26,33 +33,21 @@ class SecureStorage(object):
             return self.app(env, start_response)
 
         elif obj and container and account and req.method == "PUT":
-            # 
-            # Rely on webob than direct StringIO 
-            # body = StringIO(env['wsgi.input'].read(length))
-            #
-
-            # print "acl: ",req.acl
-            # print "body: ",req.body
-            # print "body_file: ",req.body_file
-            # print "content_length: ",req.content_length
-            # print "query_string: ",req.query_string
-
-            #
+            print "Securestorage dbg: PUT request"
             # Encrypt the incoming file, using AES-256
-            # - Encryption key static for the moment
+            # - Encryption key based on acc, container, object
             # - CFB mode, no initialization vector
-            SECRET_KEY = b'Sixteen byte key'
-            cipher_enc = AES.new(SECRET_KEY, AES.MODE_CFB)
+            enc_key = self.get_enc_key(account, container, obj)
+            cipher_enc = AES.new(enc_key, AES.MODE_CFB)
             body = cipher_enc.encrypt(req.body)
 
             env['wsgi.input'] = StringIO(body)
-
             return self.app(env, start_response)
 
         elif obj and container and account and req.method == "GET":
+            print "Securestorage dbg: GET request"
             #
             # - Verify this is a file download request
-            # - credentials ??
             body = []
             self.status_headers = [None, None]
 
@@ -61,7 +56,6 @@ class SecureStorage(object):
             # Modify response 'body'
             try:
                 for item in app_iter:
-                    # print "Item : ", item
                     body.append(item)
             finally:
                 if hasattr(app_iter, 'close'):
@@ -69,10 +63,10 @@ class SecureStorage(object):
 
             body = ''.join(body)
             # Decrypt the download file. 
-            # - Decryption key static for the moment
+            # - Decryption key based on account, container, object
             # - 
-            SECRET_KEY = b'Sixteen byte key'
-            cipher_dec = AES.new(SECRET_KEY, AES.MODE_CFB)
+            enc_key = self.get_enc_key(account, container, obj)
+            cipher_dec = AES.new(enc_key, AES.MODE_CFB)
             body = cipher_dec.decrypt(body)
 
             # Fix the header etags
@@ -89,19 +83,31 @@ class SecureStorage(object):
             return body
 
         else:
-            # print "Obj: ", obj, " Container: ", container, " Account: ", account
+            # print "Securestore dbg: Obj: ", obj, " Container: ", container, " Account: ", account
             return self.app(env, start_response)
 
     def _sr_callback(self, start_response):
-        print "sr_callback()"
+        """
+        A callback for the start_response(). 
+        We need to tweak the headers before sending the response 
+        back to the user. 
+
+        """
+        # print "Securestore dbg: sr_callback()"
         def callback(status, headers, exc_info=None):
             self.status_headers[:] = [status, headers]
-            # print "status headers 0", self.status_headers[0]
-            # print "status headers 1", self.status_headers[1]
             # Modify response 'headers'
-            # start_response(status, headers, exc_info)
 
         return callback
+
+    def get_enc_key(self, account, container, obj):
+        """
+        Generate a unique, random key for encrypting this file.
+
+        """
+        enc_key = sha1(hash_path(account, container, obj)).hexdigest()
+        return enc_key[:16]
+
 
 def filter_factory(global_conf, **local_conf):
     """Standard filter factory to use the middleware with paste.deploy"""
