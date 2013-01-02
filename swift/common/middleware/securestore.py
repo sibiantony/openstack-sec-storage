@@ -103,7 +103,8 @@ class SecureStorage(object):
     def get_enc_key(self, account, container, obj):
         """
         Generate a unique, random key for encrypting this file.
-
+        - Maybe based on the user passwords, and/or credentials
+        - Need chained keys to support tenants/group access in the above case.
         """
         enc_key = sha1(hash_path(account, container, obj)).hexdigest()
         return enc_key[:16]
