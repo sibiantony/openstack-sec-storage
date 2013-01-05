@@ -31,8 +31,21 @@ The second part, the encryption filter, decrypts the keys from the database and 
 
 This approach follows a chained encryption, thereby cryptographically securing the ACLs used by swift. The account keys are secured by a user key, which in turn is 
 secured by a password key. The password key itself is a secure hash of the user password.  The db creation, user registration can be done using the utility scripts under `utils`.
+There are some configurables for the database used, and has to be added to your filter configuration.
 
-Some of the problems associated with this approach are that : weaker mapping from tokens to keys, and a loaded proxy server.
+`[filter:securedb-enc]`
+
+`use = egg:swift#securedb_enc`
+
+`mdb_host = localhost`
+
+`mdb_user = openstack`
+
+`mdb_pass = openstack`
+
+`mdb_db   = swiftauth`
+
+Some of the problems associated with this approach are that : weaker mapping from tokens to keys, a loaded proxy server and probably scalability issues with a central db.
 
 Distributed encryption filter
 =============================
@@ -40,13 +53,19 @@ Distributed encryption filter
 The idea was to free the proxy from becoming a bottleneck by spending time in computation. Also, by default swift performs a lot better if we distribute the storage in multiple containers/objects. i.e each time a new hashpath will
 be generated for these and perhaps will be serviced by a new object server. 
 
+This is a filter for the swift object server, so add the filter details to each of the object server configuration. The filter uses a unique key for each file, and a master key to store the per-file-key encrypted.
+There is redundant encryption process at each object server, but it frees the proxy from the computation.
+
 Usage
 ========
+The first two approaches above are filters written for the proxy server. In the distributed encryption filter, the objenc_proxy is meant for the proxy-server and objenc is for the object server. Modify the configuration files accordingly.
+Detailed below is how the filters are used in general with swift. 
 
 * Add the filter details to setup.py
 
 `'securestore=swift.common.middleware.securestore:filter_factory',`
-* Edit /etc/swift/proxy-server.conf
+
+* Edit /etc/swift/proxy-server.conf (object-server.conf in case the filter is for object servers)
 
 `[pipeline:main]`
 
@@ -58,6 +77,6 @@ Usage
 
 `cache_servers = 127.0.0.1:8088`
 
-* Install and reload the proxy server
+* Install and reload the proxy server (object servers if a filter for object server)
 
-`python setup.py build; python setup.py install;` restart proxy server
+`python setup.py build; python setup.py install;` restart proxy/object servers
