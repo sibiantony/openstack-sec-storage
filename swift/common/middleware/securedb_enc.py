@@ -23,7 +23,7 @@ class SecureDBEncMiddleware(object):
     a centralized database.
 
     Needs to be added to the pipeline and requires a filter
-    declaration in the object-server.conf:
+    declaration in the proxy-server.conf:
 
     """
 
