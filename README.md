@@ -51,7 +51,7 @@ Distributed encryption filter
 =============================
 `Files : swift/common/middleware/objenc_proxy.py, swift/common/middleware/objenc.py`
 The idea was to free the proxy from becoming a bottleneck by spending time in computation. Also, by default swift performs a lot better if we distribute the storage in multiple containers/objects. i.e each time a new hashpath will
-be generated for these and probably will be serviced by a new object server. 
+be generated for these and probably will be serviced by a new object server. By distributing the computation (encryption) some performance improvements are expected upon multiple concurrent requests.
 
 This is a filter for the swift object server, so add the filter details to each of the object server configuration. The filter uses a unique key for each file, and a master key to store the per-file-key encrypted.
 There is redundant encryption process at each object server, but it frees the proxy from the computation.
