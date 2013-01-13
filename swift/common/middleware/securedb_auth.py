@@ -97,14 +97,14 @@ class SecAuth(object):
                     account, username = dbuser[0], dbuser[1] 
                     key = dbuser[2]
                     url = 'https://' if 'cert_file' in conf else 'http://'
-                    ip = conf.get('bind_ip', '127.0.0.1')
-                    if ip == '0.0.0.0':
-                        ip = '127.0.0.1'
-                    url += ip
-                    url += ':' + conf.get('bind_port', '8080') + '/v1/' + \
-                        self.reseller_prefix + account
+                    #ip = conf.get('bind_ip', '127.0.0.1')
+                    #if ip == '0.0.0.0':
+                    #    ip = '127.0.0.1'
+                    #url += ip
+                    #url += ':' + conf.get('bind_port', '8080') + '/v1/' + \
+                    #    self.reseller_prefix + account
                     self.users[account + ':' + username] = {
-                        'key': key, 'url': url, 'groups': dbuser[3].split()}
+                        'key': key, 'groups': dbuser[3].split()}
         except mdb.Error, e:
             print "DB Error %d : %s" % (e.args[0], e.args[1])
         finally:
@@ -213,10 +213,15 @@ class SecAuth(object):
         if env.get('HTTP_AUTHORIZATION'):
             account_user, sign = \
                 env['HTTP_AUTHORIZATION'].split(' ')[1].rsplit(':', 1)
-            if account_user not in self.users:
-                return None
             account, user = account_user.split(':', 1)
-            account_id = self.users[account_user]['url'].rsplit('/', 1)[-1]
+            h_account = md5(account).hexdigest()
+            h_user = md5(user).hexdigest()
+            h_account_user = h_account +':'+h_user
+            if h_account_user not in self.users:
+                return None
+
+            # account_id = url.rsplit('/', 1)[-1]
+            account_id = self.reseller_prefix + account 
             path = env['PATH_INFO']
             env['PATH_INFO'] = path.replace(account_user, account_id, 1)
             msg = base64.urlsafe_b64decode(unquote(token))
@@ -225,7 +230,7 @@ class SecAuth(object):
             if s != sign:
                 return None
             groups = [account, account_user]
-            groups.extend(self.users[account_user]['groups'])
+            groups.extend(self.users[h_account_user]['groups'])
             if '.admin' in groups:
                 groups.remove('.admin')
                 groups.append(account_id)
@@ -238,7 +243,6 @@ class SecAuth(object):
         Returns None if the request is authorized to continue or a standard
         WSGI response callable if not.
         """
-
         try:
             version, account, container, obj = split_path(req.path, 1, 4, True)
         except ValueError:
@@ -422,11 +426,14 @@ class SecAuth(object):
             return HTTPUnauthorized(request=req)
         # Authenticate user
         account_user = account + ':' + user
-        if account_user not in self.users:
+        h_account = md5(account).hexdigest()
+        h_user = md5(user).hexdigest()
+        h_account_user = h_account +':'+h_user
+        if h_account_user not in self.users:
             self.logger.increment('token_denied')
             return HTTPUnauthorized(request=req)
         # Shadowed password
-        if self.users[account_user]['key'] != md5(key).hexdigest():
+        if self.users[h_account_user]['key'] != md5(key).hexdigest():
             self.logger.increment('token_denied')
             return HTTPUnauthorized(request=req)
         # Get memcache client
@@ -445,16 +452,28 @@ class SecAuth(object):
                 expires, groups = cached_auth_data
                 if expires > time():
                     token = candidate_token
+
+        # Generate url, We defer url generation until we have access to the 
+        # account name
+        url = ''
+        url = 'https://' if 'cert_file' in self.conf else 'http://'
+        ip = self.conf.get('bind_ip', '127.0.0.1')
+        if ip == '0.0.0.0':
+            ip = '127.0.0.1'
+        url += ip
+        url += ':' + self.conf.get('bind_port', '8080') + '/v1/' + \
+           self.reseller_prefix + account
+
         # Create a new token if one didn't exist
         if not token:
             # Generate new token
             token = '%stk%s' % (self.reseller_prefix, uuid4().hex)
             expires = time() + self.token_life
             groups = [account, account_user]
-            groups.extend(self.users[account_user]['groups'])
+            groups.extend(self.users[h_account_user]['groups'])
             if '.admin' in groups:
                 groups.remove('.admin')
-                account_id = self.users[account_user]['url'].rsplit('/', 1)[-1]
+                account_id = url.rsplit('/', 1)[-1]
                 groups.append(account_id)
             groups = ','.join(groups)
             # Save token
@@ -476,7 +495,7 @@ class SecAuth(object):
             with db_con:
                 dbcur = db_con.cursor()
                 dbcur.execute("select userkey, acckey from user where account = '%s' and uname = '%s' " % \
-                    ( account, user ) )
+                    ( h_account, h_user ) )
                 dbrow = dbcur.fetchone()
                 enc_userkey, enc_acckey = dbrow[0], dbrow[1] 
         except mdb.Error, e:
@@ -501,7 +520,7 @@ class SecAuth(object):
             with db_con:
                 dbcur = db_con.cursor()
                 dbcur.execute("update user_to_token set enckey = '%s' where account = '%s' and uname = '%s' " % \
-                    ( enc_tokenkey, account, user ) )
+                    ( enc_tokenkey, h_account, h_user ) )
         except mdb.Error, e:
             print "DB Error %d : %s" % (e.args[0], e.args[1])
         finally:
@@ -512,7 +531,7 @@ class SecAuth(object):
                         headers={
                             'x-auth-token': token,
                             'x-storage-token': token,
-                            'x-storage-url': self.users[account_user]['url']})
+                            'x-storage-url': url})
 
     def posthooklogger(self, env, req):
         if not req.path.startswith(self.auth_prefix):

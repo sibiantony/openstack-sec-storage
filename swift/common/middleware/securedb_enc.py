@@ -23,7 +23,7 @@ class SecureDBEncMiddleware(object):
     a centralized database.
 
     Needs to be added to the pipeline and requires a filter
-    declaration in the proxy-server.conf:
+    declaration in the object-server.conf:
 
     """
 
@@ -46,6 +46,8 @@ class SecureDBEncMiddleware(object):
         elif obj and container and account and req.method == "PUT":
             acc_user = env['REMOTE_USER'].split(',', 2)
             account, user = acc_user[1].split(':', 1)
+            h_account = md5(account).hexdigest()
+            h_user = md5(user).hexdigest()
 
             # Get the encryption keys from db
             auth_token = env['HTTP_X_AUTH_TOKEN'].split(':', 1)[0]
@@ -54,7 +56,7 @@ class SecureDBEncMiddleware(object):
                 with db_con:
                     dbcur = db_con.cursor()
                     dbcur.execute("select enckey from user_to_token where account = '%s' and uname = '%s' " % \
-                    ( account, user ) )
+                    ( h_account, h_user ) )
                 dbrow = dbcur.fetchone()
                 enc_tokenkey = dbrow[0]
             except mdb.Error, e:
@@ -76,6 +78,8 @@ class SecureDBEncMiddleware(object):
         elif obj and container and account and req.method == "GET":
             acc_user = env['REMOTE_USER'].split(',', 2)
             account, user = acc_user[1].split(':', 1)
+            h_account = md5(account).hexdigest()
+            h_user = md5(user).hexdigest()
 
             # Get the encryption keys from db
             auth_token = env['HTTP_X_AUTH_TOKEN'].split(':', 1)[0]
@@ -84,7 +88,7 @@ class SecureDBEncMiddleware(object):
                 with db_con:
                     dbcur = db_con.cursor()
                     dbcur.execute("select enckey from user_to_token where account = '%s' and uname = '%s' " % \
-                    ( account, user ) )
+                    ( h_account, h_user ) )
                 dbrow = dbcur.fetchone()
                 enc_tokenkey = dbrow[0]
             except mdb.Error, e:

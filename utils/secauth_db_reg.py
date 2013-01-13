@@ -25,8 +25,11 @@ DB_HOST='localhost'
 
 def secauth_user_add(account, uname, gname, passwd):
 
-    # shadowed password
+    # shadowed credentials
     h_passwd = md5(passwd).hexdigest()
+    h_account = md5(account).hexdigest()
+    h_uname = md5(uname).hexdigest()
+
     passwd_key = sha256(passwd).hexdigest()[:32]
 
     # The passwd key is used to encrypt a unique user key.
@@ -46,12 +49,12 @@ def secauth_user_add(account, uname, gname, passwd):
         with con:
             cur = con.cursor()
             cur.execute("insert into user values( '%s', '%s', '%s', '%s', '%s', '%s' )" % \
-                (account, uname, h_passwd, gname, \
+                (h_account, h_uname, h_passwd, gname, \
                 enc_userkey, enc_acctkey) )
             # The encrypted keys with the token will be filled in by 
             #   the authentication layer
             cur.execute("insert into user_to_token values( '%s', '%s', '%s' )" % \
-                (account, uname, h_passwd) )
+                (h_account, h_uname, h_passwd) )
 
     except mdb.Error, e:
         print "Error %d: %s" % (e.args[0], e.args[1])
@@ -100,15 +103,18 @@ def secauth_group_add(gname):
 
 def secauth_user_del(account, uname):
 
+    h_account = md5(account).hexdigest()
+    h_uname = md5(uname).hexdigest()
+
     try: 
         con = mdb.connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 
         with con:
             cur = con.cursor()
             cur.execute("delete from user where account='%s' and uname='%s'" % \
-                (account, uname) )
+                (h_account, h_uname) )
             cur.execute("delete from user_to_token where account='%s' and uname='%s'" % \
-                (account, uname) )
+                (h_account, h_uname) )
 
     except mdb.Error, e:
         print "Error %d: %s" % (e.args[0], e.args[1])
