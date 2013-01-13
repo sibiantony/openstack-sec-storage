@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# A simple bash script to auto-generate 
+# 	unique (read checksum) files for testing
+
+index=1
+multi=2 # Multiplier in Mbytes
+FILE_PREFIX="xa"
+
+if [[ $# -lt 1 ]]; then
+	echo "Usage: genfiles {fixed|multi}"
+	exit 1
+fi
+
+case $1 in 
+	"fixed")
+		# Fixed size files generation
+		mbytes=5
+		for alph in {a..t}
+		do
+			echo $alph
+			count=$( expr $mbytes \* 1024 )
+			dd if=/dev/urandom of=${FILE_PREFIX}${alph}_${mbytes} ibs=1024 count=$count
+		done
+		;; 
+	"multi")
+		for alph in {a..t}
+		do
+			echo $alph
+			mbytes=$( expr $index \* $multi )
+			count=$( expr $mbytes \* 1024 )
+			dd if=/dev/urandom of=${FILE_PREFIX}${alph}_${mbytes} ibs=1024 count=$count
+			(( index = index + 1 ))
+		done
+		;;
+	*)
+		echo "Error. Usage gen_files {fixed|multi}"
+		exit 1
+esac

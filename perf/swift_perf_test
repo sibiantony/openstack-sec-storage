@@ -1,0 +1,208 @@
+#!/bin/bash
+
+# A simple bash script to test the swift storage 
+# 3 different ways.
+# Make sure to generate the files beforehand
+# Usage : swift_perf_test {seq|par|multic}
+#		seq - sequential mode, varying file sizes
+#		par - parallel requests, fixed file sizes
+#		multic - same as 'par', use multiple containers.
+# 
+# Author : Sibi Antony, (c) 2012
+# sibi [dot] antony [at] gmail [dot] com 
+
+FILES_DIR="files/"
+FILES_PREFIX="xa"
+
+SWIFT_CONTNR="test_contnr"
+SWIFT_CMD="swift -A http://127.0.0.1:8080/auth/v1.0 -U test:tester -K testing "
+TIME_CMD="/usr/bin/time"
+PERF_DATA="perf_data"
+
+# A waiting period before issuing successive swift requests.
+SLEEP_DUR=2
+MY_PID=$$
+
+cd $FILES_DIR
+[[ -f $PERF_DATA ]] && cp $PERF_DATA ${PERF_DATA}.bak
+>$PERF_DATA
+
+function test_singleC_sequential() 
+{
+	count=1
+	for file in ${FILES_PREFIX}*
+	do
+		echo $file
+		file_mbytes=$( echo $file | awk -F'_' '{ print $2 }' )
+
+		# Trailing newline for time output, so do the appending ourselves!
+		write_time=$( $TIME_CMD -f "%e" 2>&1 $SWIFT_CMD upload $SWIFT_CONTNR $file >/dev/null )
+		sleep $SLEEP_DUR
+		read_time=$( $TIME_CMD -f "%e" 2>&1 $SWIFT_CMD download $SWIFT_CONTNR $file >/dev/null )
+		sleep $SLEEP_DUR
+		echo "$count $file_mbytes $read_time $write_time" >>$PERF_DATA
+
+		(( count = count + 1 ))
+	done
+
+	echo "Deleting the files.."
+	for file in xa*
+	do
+		echo $file
+		$SWIFT_CMD delete $SWIFT_CONTNR $file >/dev/null
+	done
+
+}
+
+
+function test_singleC_parallel() 
+{
+	count=1
+	file_count=$( echo ${FILES_PREFIX}* | wc -w )
+	for file in ${FILES_PREFIX}*
+	do
+		file_mbytes=$( echo $file | awk -F'_' '{ print $2 }' )
+		files_list=$( echo ${FILES_PREFIX}* | xargs -n 1 echo 2>/dev/null | head -n $count )
+		echo $files_list
+		# Write the files - parallel 
+		set -x
+		write_start_time=$( date +"%s.%N" )
+		i=0
+		for file_i in $files_list
+		do
+			$SWIFT_CMD upload $SWIFT_CONTNR $file_i >/dev/null &
+			pid_list[$i]=$!
+			(( i = i + 1 ))
+		done
+		for pid in ${pid_list[*]}
+		do
+			[[ $pid != $MY_PID ]] && wait $pid
+		done
+		write_end_time=$( date +"%s.%N" )
+		write_time=$(echo "$write_end_time-$write_start_time" | bc )
+
+		sleep $SLEEP_DUR
+		pid_list=()
+		# Read the files - parallel 
+		read_start_time=$( date +"%s.%N" )
+		i=0
+		for file_i in $files_list
+		do
+			$SWIFT_CMD download $SWIFT_CONTNR $file_i >/dev/null &
+			pid_list[$i]=$!
+			(( i = i + 1 ))
+		done
+		for pid in ${pid_list[*]}
+		do
+			[[ $pid != $MY_PID ]] && wait $pid
+		done
+		read_end_time=$( date +"%s.%N" )
+		read_time=$(echo "$read_end_time-$read_start_time" | bc )
+		set +x
+
+		sleep $SLEEP_DUR
+		par_mbytes=$( echo "$count * $file_mbytes" | bc )
+		echo "$count $par_mbytes $read_time $write_time" >>$PERF_DATA
+
+		(( count = count + 1 ))
+	done
+
+	# Delete the files.. 
+	for file in ${FILES_PREFIX}*
+	do
+		echo $file
+		$SWIFT_CMD delete $SWIFT_CONTNR $file >/dev/null
+	done
+
+	
+}
+
+function test_multiC_parallel() 
+{
+	count=1
+	file_count=$( echo ${FILES_PREFIX}* | wc -w )
+
+	# New container for each file
+	for file in ${FILES_PREFIX}*
+	do
+		$SWIFT_CMD post ${file}_contnr
+	done
+
+	for file in ${FILES_PREFIX}*
+	do
+		file_mbytes=$( echo $file | awk -F'_' '{ print $2 }' )
+		files_list=$( echo ${FILES_PREFIX}* | xargs -n 1 echo 2>/dev/null | head -n $count )
+		echo $files_list
+		# Write the files - parallel 
+		set -x
+		write_start_time=$( date +"%s.%N" )
+		i=0
+		for file_i in $files_list
+		do
+			$SWIFT_CMD upload ${file_i}_contnr $file_i >/dev/null &
+			pid_list[$i]=$!
+			(( i = i + 1 ))
+		done
+		for pid in ${pid_list[*]}
+		do
+			[[ $pid != $MY_PID ]] && wait $pid
+		done
+		write_end_time=$( date +"%s.%N" )
+		write_time=$(echo "$write_end_time-$write_start_time" | bc )
+
+		sleep $SLEEP_DUR
+		pid_list=()
+		# Read the files - parallel 
+		read_start_time=$( date +"%s.%N" )
+		i=0
+		for file_i in $files_list
+		do
+			$SWIFT_CMD download ${file_i}_contnr $file_i >/dev/null &
+			pid_list[$i]=$!
+			(( i = i + 1 ))
+		done
+		for pid in ${pid_list[*]}
+		do
+			[[ $pid != $MY_PID ]] && wait $pid
+		done
+		read_end_time=$( date +"%s.%N" )
+		read_time=$(echo "$read_end_time-$read_start_time" | bc )
+		set +x
+
+		sleep $SLEEP_DUR
+		par_mbytes=$( echo "$count * $file_mbytes" | bc )
+		echo "$count $par_mbytes $read_time $write_time" >>$PERF_DATA
+
+		(( count = count + 1 ))
+	done
+
+	# Delete the files.. 
+	for file in ${FILES_PREFIX}*
+	do
+		echo $file
+		$SWIFT_CMD delete $SWIFT_CONTNR $file >/dev/null
+		$SWIFT_CMD delete ${file}_contnr >/dev/null
+	done
+	
+}
+
+
+if [[ $# -lt 1 ]]; then
+	echo "Usage : swift_perf_test {seq|par|multic}"
+	exit 1
+fi
+
+case $1 in 
+	"seq")	echo "seq"
+		test_singleC_sequential
+		;;
+	"par")	echo "par"
+		test_singleC_parallel
+		;;
+	"multic")	echo "multiple containers"
+			test_multiC_parallel	
+			;;
+	*)	echo "Error. Usage : swift_perf_test {seq|par|multic}"
+			;;
+esac
+cd - >/dev/null
